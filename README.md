@@ -9,6 +9,40 @@ Full-stack hackathon monorepo with frontend, backend, Slack bot, and a Terraform
 - CodeDeploy handles production rollouts with automatic rollback on failure; post-deploy smoke tests publish results and CloudWatch dashboard links to Slack and PR comments.
 - An AI Analyzer Lambda inspects `.delightful.yaml` plus source code, comments on PRs, and drops suggested `terraform.tfvars` files for review under `generated/`.
 
+## Repository Layout
+```text
+deplight-platform/
+├─ apps/
+│  └─ analyzer-lambda/
+├─ infrastructure/
+│  ├─ modules/
+│  │  ├─ iam-github-oidc/
+│  │  ├─ network-baseline/
+│  │  ├─ ecs-service/
+│  │  ├─ codedeploy-bluegreen/
+│  │  └─ observability-suite/
+│  ├─ tfcloud-config/
+│  └─ workspaces/
+│     ├─ dev/
+│     └─ prod/
+├─ ops/
+│  ├─ runbooks/
+│  └─ scripts/
+│     ├─ rollback/
+│     └─ smoke-tests/
+├─ docs/
+│  ├─ architecture/
+│  ├─ handover/
+│  └─ risk-register/
+├─ generated/
+│  └─ analyzer-artifacts/
+├─ config/
+│  ├─ delightful/
+│  └─ terraform/
+└─ .github/
+   └─ workflows/
+```
+
 ## Where to Start
 1. Review `dev-plan.md` for the 4-day execution plan, task breakdown, and acceptance criteria.
 2. Follow `deployment_system.md` for architecture details, interfaces, and rollback guidance.

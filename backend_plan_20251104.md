@@ -45,7 +45,7 @@
 
 ## Task Board
 
-[ ] `T-01` Establish GitHub→AWS OIDC trust (Critical Path)  
+[✓] `T-01` Establish GitHub→AWS OIDC trust (Critical Path)  
 - Scope: In — AWS IAM role, trust policy, claim mappings; Out — global IAM refactors.  
 - Dependencies: None  
 - Effort: 3h | Priority: Must | Risk: Medium — claim mismatch can block deployments.  

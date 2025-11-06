@@ -110,8 +110,8 @@ jobs:
           ANALYSIS_RESULT=$(aws lambda invoke \
             --function-name delightful-deploy-ai-analyzer \
             --payload "$PAYLOAD" \
-            --region ap-northeast-2 \
             /tmp/analysis_output.json \
+            --region ap-northeast-2 \
             --query 'StatusCode' \
             --output text)
 

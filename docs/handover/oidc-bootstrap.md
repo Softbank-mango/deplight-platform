@@ -18,8 +18,10 @@
 
 ## Validation Checklist
 - `terraform plan` (run from temporary root: `infrastructure/tmp-github-oidc`) confirms provider + role creation.
-- GitHub Actions workflow (to add in `.github/workflows/oidc-smoke.yml`) uses `aws-actions/configure-aws-credentials@v4` with the role ARN and runs `aws sts get-caller-identity`.
-- Workflow success log must show the IAM role ARN returned by STS.
+- GitHub Actions smoke workflows:
+  - `.github/workflows/oidc-smoke.yml` (T-01 validation) — manual dispatch returns the IAM role ARN via `aws sts get-caller-identity`.
+  - `.github/workflows/oidc-credentials.yml` (T-02 verification) — manual dispatch ensures the deployment pipeline can assume the role using the `AWS_GITHUB_OIDC_ROLE` secret.
+- Workflow success logs must show the IAM role ARN returned by STS.
 
 ## Maintenance Notes
 - If repo naming or environments change, update `allowed_subjects` and re-run plan.

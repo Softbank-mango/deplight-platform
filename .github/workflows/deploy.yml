@@ -106,29 +106,59 @@ jobs:
             --argjson readme "$README_CONTENT" \
             '{repository: $repo, commit_sha: $sha, branch: $branch, file_list: $files, readme_content: $readme}')
 
-          # Call Lambda AI with safely encoded payload
-          ANALYSIS_RESULT=$(aws lambda invoke \
+          # Generate analysis ID based on repo and commit
+          ANALYSIS_ID=$(echo -n "${{ github.event.inputs.target_repository }}-${{ github.sha }}" | md5sum | cut -d' ' -f1 | cut -c1-24)
+          echo "Analysis ID: $ANALYSIS_ID"
+
+          # Call Lambda AI asynchronously (no wait for response)
+          echo "🔍 Triggering async AI analysis..."
+          aws lambda invoke \
             --function-name delightful-deploy-ai-analyzer \
+            --invocation-type Event \
             --payload "$PAYLOAD" \
             --cli-binary-format raw-in-base64-out \
-            /tmp/analysis_output.json \
             --region ap-northeast-2 \
-            --query 'StatusCode' \
-            --output text)
+            /tmp/lambda_invoke_response.json
 
-          echo "Lambda invocation status: $ANALYSIS_RESULT"
-          cat /tmp/analysis_output.json
+          echo "✅ Lambda invoked asynchronously"
 
-          # Parse Lambda response
-          RESPONSE_BODY=$(cat /tmp/analysis_output.json | jq -r '.body')
-          echo "$RESPONSE_BODY" > /tmp/analysis_parsed.json
-          cat /tmp/analysis_parsed.json | jq '.'
+          # Poll S3 for buildspec file (indicates analysis complete)
+          S3_BUCKET="delightful-deploy-codedeploy-artifacts-513348493870"
+          S3_BUILDSPEC_KEY="analysis/${ANALYSIS_ID}/buildspec"
+          MAX_WAIT=300  # 5 minutes
+          WAIT_TIME=0
+          POLL_INTERVAL=10
 
-          # Extract configuration
-          APP_PORT=$(cat /tmp/analysis_parsed.json | jq -r '.deployment_config.port // 8000')
-          CPU=$(cat /tmp/analysis_parsed.json | jq -r '.deployment_config.cpu // 256')
-          MEMORY=$(cat /tmp/analysis_parsed.json | jq -r '.deployment_config.memory // 512')
-          ANALYSIS_ID=$(cat /tmp/analysis_parsed.json | jq -r '.analysis_id')
+          echo "⏳ Waiting for AI analysis to complete..."
+          while [ $WAIT_TIME -lt $MAX_WAIT ]; do
+            if aws s3 ls "s3://${S3_BUCKET}/${S3_BUILDSPEC_KEY}" >/dev/null 2>&1; then
+              echo "✅ Analysis complete! Files generated in S3."
+              break
+            fi
+            echo "  ⏳ Waiting... (${WAIT_TIME}s/${MAX_WAIT}s)"
+            sleep $POLL_INTERVAL
+            WAIT_TIME=$((WAIT_TIME + POLL_INTERVAL))
+          done
+
+          if [ $WAIT_TIME -ge $MAX_WAIT ]; then
+            echo "❌ Timeout waiting for AI analysis"
+            exit 1
+          fi
+
+          # Download buildspec to extract configuration
+          aws s3 cp "s3://${S3_BUCKET}/analysis/${ANALYSIS_ID}/buildspec" /tmp/buildspec.yml
+
+          # Extract port from buildspec or use defaults
+          APP_PORT=8000
+          CPU=256
+          MEMORY=512
+
+          # Try to extract port from buildspec if it contains environment variables
+          if grep -q "APP_PORT" /tmp/buildspec.yml 2>/dev/null; then
+            APP_PORT=$(grep "APP_PORT" /tmp/buildspec.yml | head -1 | grep -oP '\d+' || echo "8000")
+          fi
+
+          echo "Using configuration: Port=${APP_PORT}, CPU=${CPU}, Memory=${MEMORY}"
 
           echo "port=${APP_PORT}" >> $GITHUB_OUTPUT
           echo "cpu=${CPU}" >> $GITHUB_OUTPUT

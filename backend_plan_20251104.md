@@ -51,7 +51,7 @@
 - Effort: 3h | Priority: Must | Risk: Medium — claim mismatch can block deployments.  
 - Acceptance: Dry-run workflow obtains AWS identity via `aws sts get-caller-identity`.
 
-[ ] `T-02` Configure GitHub Actions AWS credential usage (Critical Path)  
+[✓] `T-02` Configure GitHub Actions AWS credential usage (Critical Path)  
 - Scope: In — apply OIDC role via `aws-actions/configure-aws-credentials`; Out — GitHub org-wide secrets cleanup.  
 - Dependencies: T-01  
 - Effort: 3h | Priority: Must | Risk: Medium — misconfigured permissions lead to failed applies.  

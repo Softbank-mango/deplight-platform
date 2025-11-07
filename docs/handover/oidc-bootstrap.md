@@ -23,6 +23,14 @@
   - `.github/workflows/oidc-credentials.yml` (T-02 verification) — manual dispatch ensures the deployment pipeline can assume the role using the `AWS_GITHUB_OIDC_ROLE` secret.
 - Workflow success logs must show the IAM role ARN returned by STS.
 
+## Terraform Backend & Environment Notes
+- Terraform state is stored in S3 bucket `deplight-platform-tf-state`, key `global/terraform.tfstate`, with locking via DynamoDB table `deplight-platform-tf-locks` (region `ap-northeast-2`).
+- Run `terraform init -migrate-state` once after cloning to connect to the remote backend.
+- Use per-environment tfvars:
+  - Dev: `terraform plan -var-file=environments/dev.tfvars`
+  - Prod: `terraform plan -var-file=environments/prod.tfvars`
+- Additional overrides (from AI analyzer or CI) can be supplied via extra tfvars or `-var` flags; these supersede the default values.
+
 ## Maintenance Notes
 - If repo naming or environments change, update `allowed_subjects` and re-run plan.
 - Monitor GitHub’s OIDC thumbprint; if it rotates, update Terraform variable and re-apply.

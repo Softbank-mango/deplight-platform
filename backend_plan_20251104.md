@@ -57,13 +57,13 @@
 - Effort: 3h | Priority: Must | Risk: Medium — misconfigured permissions lead to failed applies.  
 - Acceptance: Workflow step acquires temp creds and lists ECS clusters without error.
 
-[ ] `T-03` Scaffold Terraform module structure under `infrastructure/`  
+[✓] `T-03` Scaffold Terraform module structure under `infrastructure/`  
 - Scope: In — baseline modules (network, ECS, CodeDeploy hooks); Out — non-prod environment duplication.  
 - Dependencies: None  
 - Effort: 4h | Priority: Must | Risk: Medium — inconsistent module interfaces delay Terraform setup.  
 - Acceptance: Modules lint/plan locally with placeholders and publish input/output documentation.
 
-[ ] `T-04` Configure Terraform backend & workflow integration  
+[✓] `T-04` Configure Terraform backend & workflow integration  
 - Scope: In — remote state (S3 + DynamoDB), backend config, secure variable handling in CI; Out — multi-account backend federation.  
 - Dependencies: T-03  
 - Effort: 3h | Priority: Must | Risk: Medium — misaligned state config blocks applies.  

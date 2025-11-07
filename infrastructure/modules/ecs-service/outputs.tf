@@ -3,6 +3,11 @@ output "cluster_id" {
   value       = var.create_cluster ? try(aws_ecs_cluster.this[0].id, null) : var.cluster_arn
 }
 
+output "cluster_name" {
+  description = "Name of the ECS cluster."
+  value       = var.cluster_name
+}
+
 output "cluster_arn" {
   description = "ARN of the ECS cluster."
   value       = var.create_cluster ? try(aws_ecs_cluster.this[0].arn, null) : var.cluster_arn

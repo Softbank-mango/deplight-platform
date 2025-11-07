@@ -72,14 +72,14 @@ resource "aws_ecs_task_definition" "this" {
 }
 
 resource "aws_ecs_service" "this" {
-  name                               = var.name
-  cluster                            = var.create_cluster ? aws_ecs_cluster.this[0].id : var.cluster_arn
-  task_definition                    = aws_ecs_task_definition.this.arn
-  desired_count                      = var.desired_count
-  launch_type                        = "FARGATE"
-  platform_version                   = var.platform_version
-  enable_execute_command             = var.enable_execute_command
-  health_check_grace_period_seconds  = var.health_check_grace_period_seconds
+  name                              = var.name
+  cluster                           = var.create_cluster ? aws_ecs_cluster.this[0].id : var.cluster_arn
+  task_definition                   = aws_ecs_task_definition.this.arn
+  desired_count                     = var.desired_count
+  launch_type                       = "FARGATE"
+  platform_version                  = var.platform_version
+  enable_execute_command            = var.enable_execute_command
+  health_check_grace_period_seconds = var.health_check_grace_period_seconds
 
   lifecycle {
     ignore_changes = [
@@ -88,9 +88,9 @@ resource "aws_ecs_service" "this" {
   }
 
   network_configuration {
-    subnets         = var.subnet_ids
-    security_groups = var.security_group_ids
-    assign_public_ip = var.assign_public_ip ? "ENABLED" : "DISABLED"
+    subnets          = var.subnet_ids
+    security_groups  = var.security_group_ids
+    assign_public_ip = var.assign_public_ip
   }
 
   dynamic "load_balancer" {

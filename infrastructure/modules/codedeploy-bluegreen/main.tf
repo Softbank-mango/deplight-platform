@@ -31,7 +31,7 @@ resource "aws_iam_role" "codedeploy" {
 # Attach the AWS managed policy AWSCodeDeployRoleForECS to the IAM role
 resource "aws_iam_role_policy_attachment" "codedeploy_managed" {
   role       = aws_iam_role.codedeploy.name
-  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSCodeDeployRoleForECS"
+  policy_arn = "arn:aws:iam::aws:policy/AWSCodeDeployRoleForECS"
 }
 
 # Create a codedeploy application
@@ -43,9 +43,9 @@ resource "aws_codedeploy_app" "this" {
 }
 
 resource "aws_codedeploy_deployment_group" "this" {
-  app_name              = aws_codedeploy_app.this.name
-  deployment_group_name = "${var.name}-dg"
-  service_role_arn      = aws_iam_role.codedeploy.arn
+  app_name               = aws_codedeploy_app.this.name
+  deployment_group_name  = "${var.name}-dg"
+  service_role_arn       = aws_iam_role.codedeploy.arn
   deployment_config_name = var.deployment_config_name
 
   auto_rollback_configuration {

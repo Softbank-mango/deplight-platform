@@ -164,10 +164,45 @@ resource "aws_security_group" "ecs_tasks" {
 
 # CloudWatch Log Group
 resource "aws_cloudwatch_log_group" "app" {
-  name              = "/aws/ecs/${var.app_name}"
+  count             = 1
+  name              = var.log_group_name_app
   retention_in_days = 7
 
   tags = {
     Name = "${var.app_name}-logs"
+  }
+}
+# S3 bucket for analyzer artifacts and deployment assets
+resource "aws_s3_bucket" "artifacts" {
+  count  = var.use_existing_artifacts_bucket ? 0 : 1
+  bucket = "${var.app_name}-artifacts-${data.aws_caller_identity.current.account_id}"
+
+  tags = {
+    Name = "${var.app_name}-artifacts"
+  }
+}
+
+resource "aws_s3_bucket_versioning" "artifacts" {
+  count  = var.use_existing_artifacts_bucket ? 0 : 1
+  bucket = aws_s3_bucket.artifacts[0].id
+
+  versioning_configuration {
+    status = "Enabled"
+  }
+}
+
+resource "aws_s3_bucket_lifecycle_configuration" "artifacts" {
+  count  = var.use_existing_artifacts_bucket ? 0 : 1
+  bucket = aws_s3_bucket.artifacts[0].id
+
+  rule {
+    id     = "expire-old-artifacts"
+    status = "Enabled"
+
+    filter {}
+
+    noncurrent_version_expiration {
+      noncurrent_days = 30
+    }
   }
 }

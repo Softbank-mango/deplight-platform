@@ -32,8 +32,8 @@ resource "aws_ecs_task_definition" "app" {
   requires_compatibilities = ["FARGATE"]
   cpu                      = var.container_cpu
   memory                   = var.container_memory
-  execution_role_arn       = aws_iam_role.ecs_execution_role.arn
-  task_role_arn            = aws_iam_role.ecs_task_role.arn
+  execution_role_arn       = var.use_existing_roles ? var.ecs_execution_role_arn : aws_iam_role.ecs_execution_role[0].arn
+  task_role_arn            = var.use_existing_roles ? var.ecs_task_role_arn : aws_iam_role.ecs_task_role[0].arn
 
   container_definitions = jsonencode([
     {
@@ -73,7 +73,7 @@ resource "aws_ecs_task_definition" "app" {
       logConfiguration = {
         logDriver = "awslogs"
         options = {
-          "awslogs-group"         = aws_cloudwatch_log_group.app.name
+          "awslogs-group"         = var.log_group_name_app
           "awslogs-region"        = var.aws_region
           "awslogs-stream-prefix" = "ecs"
         }
@@ -120,17 +120,18 @@ resource "aws_ecs_service" "app" {
     type = var.enable_blue_green_deployment ? "CODE_DEPLOY" : "ECS"
   }
 
-  # Circuit Breaker for fast and safe deployments (when not using CodeDeploy)
-  deployment_circuit_breaker {
-    enable   = var.enable_blue_green_deployment ? false : true
-    rollback = var.enable_blue_green_deployment ? false : true
+  # Circuit Breaker and deployment configuration (when not using CodeDeploy)
+  dynamic "deployment_circuit_breaker" {
+    for_each = var.enable_blue_green_deployment ? [] : [1]
+    content {
+      enable   = true
+      rollback = true
+    }
   }
 
-  # Fast deployment configuration (when not using CodeDeploy)
-  deployment_configuration {
-    minimum_healthy_percent = var.enable_blue_green_deployment ? 100 : 100
-    maximum_percent         = var.enable_blue_green_deployment ? 100 : 200
-  }
+  # Deployment configuration
+  deployment_minimum_healthy_percent = var.enable_blue_green_deployment ? 100 : 100
+  deployment_maximum_percent         = var.enable_blue_green_deployment ? 100 : 200
 
   # Load balancer configuration
   dynamic "load_balancer" {
@@ -171,6 +172,100 @@ resource "aws_ecs_service" "app" {
   tags = {
     Name = "${var.app_name}-service"
   }
+}
+
+# =====================
+# Dashboard ECS Service
+# =====================
+
+resource "aws_cloudwatch_log_group" "dashboard" {
+  count             = 1
+  name              = "/aws/ecs/${var.app_name}-dashboard"
+  retention_in_days = 7
+
+  lifecycle {
+    prevent_destroy = false
+  }
+}
+
+resource "aws_ecs_task_definition" "dashboard" {
+  family                   = "${var.app_name}-dashboard"
+  network_mode             = "awsvpc"
+  requires_compatibilities = ["FARGATE"]
+  cpu                      = var.container_cpu
+  memory                   = var.container_memory
+  execution_role_arn       = var.use_existing_roles ? var.ecs_execution_role_arn : aws_iam_role.ecs_execution_role[0].arn
+  task_role_arn            = var.use_existing_roles ? var.ecs_task_role_arn : aws_iam_role.ecs_task_role[0].arn
+
+  container_definitions = jsonencode([
+    {
+      name      = "dashboard"
+      image     = "${var.ecr_repository_url}:dashboard-latest"
+      essential = true
+
+      portMappings = [
+        {
+          containerPort = var.container_port
+          protocol      = "tcp"
+        }
+      ]
+
+      environment = [
+        { name = "PORT", value = tostring(var.container_port) },
+        { name = "ENVIRONMENT", value = var.environment },
+        { name = "ALB_DNS", value = aws_lb.main.dns_name },
+        { name = "AWS_REGION", value = var.aws_region },
+        { name = "MANGO_REPO", value = "Softbank-mango/deplight-platform-v3" }
+      ]
+
+      secrets = [
+        {
+          name      = "GITHUB_TOKEN"
+          valueFrom = "/delightful/github/token"
+        }
+      ]
+
+      logConfiguration = {
+        logDriver = "awslogs"
+        options = {
+          "awslogs-group"         = var.log_group_name_dashboard
+          "awslogs-region"        = var.aws_region
+          "awslogs-stream-prefix" = "ecs"
+        }
+      }
+    }
+  ])
+}
+
+resource "aws_ecs_service" "dashboard" {
+  name            = "${var.app_name}-dashboard-service"
+  cluster         = aws_ecs_cluster.main.id
+  task_definition = aws_ecs_task_definition.dashboard.arn
+  desired_count   = 1
+  launch_type     = "FARGATE"
+
+  network_configuration {
+    subnets          = var.private_subnet_ids
+    security_groups  = [aws_security_group.ecs_tasks.id]
+    assign_public_ip = false
+  }
+
+  deployment_controller {
+    type = "ECS"
+  }
+
+  load_balancer {
+    target_group_arn = aws_lb_target_group.dashboard.arn
+    container_name   = "dashboard"
+    container_port   = var.container_port
+  }
+
+  enable_ecs_managed_tags = true
+  propagate_tags          = "SERVICE"
+
+  depends_on = [
+    aws_lb_listener.http
+  ]
 }
 
 # Auto Scaling Target

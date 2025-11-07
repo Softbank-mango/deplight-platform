@@ -1,4 +1,8 @@
 # CloudWatch Dashboard for Deployment Garden
+locals {
+  app_log_group_name = var.create_log_groups ? aws_cloudwatch_log_group.app[0].name : var.log_group_name_app
+}
+
 resource "aws_cloudwatch_dashboard" "main" {
   dashboard_name = "${var.app_name}-dashboard"
 
@@ -122,7 +126,7 @@ resource "aws_cloudwatch_dashboard" "main" {
       {
         type = "log"
         properties = {
-          query   = "SOURCE '${aws_cloudwatch_log_group.app.name}' | fields @timestamp, @message | filter @message like /deployment/ | sort @timestamp desc | limit 20"
+          query   = "SOURCE '${local.app_log_group_name}' | fields @timestamp, @message | filter @message like /deployment/ | sort @timestamp desc | limit 20"
           region  = var.aws_region
           title   = "Recent Deployments"
         }
@@ -158,8 +162,9 @@ resource "aws_cloudwatch_dashboard" "main" {
 
 # Custom Metrics for Deployment Garden
 resource "aws_cloudwatch_log_metric_filter" "deployment_success" {
+  count          = var.create_log_groups ? 1 : 0
   name           = "${var.app_name}-deployment-success"
-  log_group_name = aws_cloudwatch_log_group.app.name
+  log_group_name = local.app_log_group_name
   pattern        = "[timestamp, request_id, event_type = DEPLOYMENT_SUCCESS, ...]"
 
   metric_transformation {
@@ -171,8 +176,9 @@ resource "aws_cloudwatch_log_metric_filter" "deployment_success" {
 }
 
 resource "aws_cloudwatch_log_metric_filter" "deployment_failure" {
+  count          = var.create_log_groups ? 1 : 0
   name           = "${var.app_name}-deployment-failure"
-  log_group_name = aws_cloudwatch_log_group.app.name
+  log_group_name = local.app_log_group_name
   pattern        = "[timestamp, request_id, event_type = DEPLOYMENT_FAILURE, ...]"
 
   metric_transformation {
@@ -184,8 +190,9 @@ resource "aws_cloudwatch_log_metric_filter" "deployment_failure" {
 }
 
 resource "aws_cloudwatch_log_metric_filter" "garden_flowers" {
+  count          = var.create_log_groups ? 1 : 0
   name           = "${var.app_name}-garden-flowers"
-  log_group_name = aws_cloudwatch_log_group.app.name
+  log_group_name = local.app_log_group_name
   pattern        = "[timestamp, request_id, event_type = BLOOM, ...]"
 
   metric_transformation {
@@ -231,10 +238,10 @@ resource "aws_sns_topic_subscription" "alerts_email" {
 resource "aws_cloudwatch_query_definition" "error_analysis" {
   name = "${var.app_name}-error-analysis"
 
-  log_group_names = [
-    aws_cloudwatch_log_group.app.name,
-    aws_cloudwatch_log_group.lambda_analyzer.name
-  ]
+  log_group_names = concat(
+    [local.app_log_group_name],
+    var.create_log_groups ? [aws_cloudwatch_log_group.lambda_analyzer[0].name] : [var.log_group_name_lambda]
+  )
 
   query_string = <<-QUERY
     fields @timestamp, @message
@@ -249,7 +256,7 @@ resource "aws_cloudwatch_query_definition" "deployment_timeline" {
   name = "${var.app_name}-deployment-timeline"
 
   log_group_names = [
-    aws_cloudwatch_log_group.app.name
+    local.app_log_group_name
   ]
 
   query_string = <<-QUERY
@@ -264,7 +271,7 @@ resource "aws_cloudwatch_query_definition" "performance_analysis" {
   name = "${var.app_name}-performance-analysis"
 
   log_group_names = [
-    aws_cloudwatch_log_group.app.name
+    local.app_log_group_name
   ]
 
   query_string = <<-QUERY

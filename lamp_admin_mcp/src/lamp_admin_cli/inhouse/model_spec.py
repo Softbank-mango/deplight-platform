@@ -8,7 +8,7 @@ import yaml
 DEFAULT_PROJECT_NAME = "letsur-common-app"
 DEFAULT_SERVICE_NAME = "fastapi"
 DEFAULT_ECR_REPO_PREFIX = (
-    "441676301796.dkr.ecr.ap-northeast-2.amazonaws.com/letsur-serving-fastapi"
+    "513348493870.dkr.ecr.ap-northeast-2.amazonaws.com/delightful-deploy"
 )
 
 

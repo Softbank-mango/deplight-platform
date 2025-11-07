@@ -42,17 +42,27 @@ ai_analysis_table = dynamodb.Table('delightful-deploy-ai-analysis')
 garden_state_table = dynamodb.Table('delightful-deploy-garden-state')
 deployment_logs_table = dynamodb.Table('delightful-deploy-deployment-logs')
 
-# ALB DNS (환경변수 또는 기본값)
-ALB_DNS = os.getenv('ALB_DNS', 'delightful-deploy-alb-796875577.ap-northeast-2.elb.amazonaws.com')
+# ALB DNS (환경변수에서 가져오기 - Terraform이 설정)
+ALB_DNS = os.getenv('ALB_DNS', 'delightful-deploy-alb-1219635926.ap-northeast-2.elb.amazonaws.com')
 
 # GitHub Configuration for triggering workflows
 GITHUB_TOKEN = os.getenv('GITHUB_TOKEN')  # Personal Access Token
 GITHUB_API_URL = "https://api.github.com"
+MANGO_REPO = os.getenv('MANGO_REPO', 'Softbank-mango/deplight-platform-v3')
 
 
 @app.get("/")
 async def root():
     """루트 경로 - index.html 제공"""
+    index_path = STATIC_DIR / "index.html"
+    if not index_path.exists():
+        raise HTTPException(status_code=404, detail=f"index.html not found at {index_path}")
+    return FileResponse(str(index_path))
+
+
+@app.get("/dashboard")
+async def dashboard_root():
+    """대시보드 경로 - index.html 제공(/dashboard 라우팅 호환)"""
     index_path = STATIC_DIR / "index.html"
     if not index_path.exists():
         raise HTTPException(status_code=404, detail=f"index.html not found at {index_path}")
@@ -318,8 +328,8 @@ async def start_deployment(deployment: dict):
         # GitHub Actions Workflow Dispatch 트리거
         # 중요: Mango의 workflow를 트리거 (사용자 repo가 아님!)
         if GITHUB_TOKEN:
-            # Mango의 GitHub repo
-            mango_repo = "Softbank-mango/arc_test"
+            # Mango의 GitHub repo (환경변수로 재정의 가능)
+            mango_repo = MANGO_REPO
             workflow_file = "deploy.yml"
             dispatch_url = f"{GITHUB_API_URL}/repos/{mango_repo}/actions/workflows/{workflow_file}/dispatches"
 

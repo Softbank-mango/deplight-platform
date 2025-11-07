@@ -1,7 +1,7 @@
 # Lambda Function for AI Code Analyzer
 resource "aws_lambda_function" "ai_analyzer" {
   function_name = "${var.app_name}-ai-analyzer"
-  role          = aws_iam_role.lambda_analyzer.arn
+  role          = var.use_existing_roles ? var.lambda_analyzer_role_arn : aws_iam_role.lambda_analyzer[0].arn
   handler       = "handler.lambda_handler"
   runtime       = "python3.11"
   timeout       = 900  # 15 minutes for comprehensive analysis
@@ -18,6 +18,7 @@ resource "aws_lambda_function" "ai_analyzer" {
       GARDEN_STATE_TABLE   = aws_dynamodb_table.garden_state.name
       AI_ANALYSIS_TABLE    = aws_dynamodb_table.ai_analysis.name
       DEPLOYMENT_TABLE     = aws_dynamodb_table.deployment_history.name
+      S3_BUCKET            = var.artifacts_bucket_name
       ENVIRONMENT          = var.environment
     }
   }
@@ -69,8 +70,13 @@ resource "aws_sqs_queue" "lambda_dlq" {
 
 # CloudWatch Log Group for Lambda
 resource "aws_cloudwatch_log_group" "lambda_analyzer" {
+  count             = 1
   name              = "/aws/lambda/${aws_lambda_function.ai_analyzer.function_name}"
   retention_in_days = 7
+
+  lifecycle {
+    prevent_destroy = false
+  }
 
   tags = {
     Name = "${var.app_name}-lambda-logs"

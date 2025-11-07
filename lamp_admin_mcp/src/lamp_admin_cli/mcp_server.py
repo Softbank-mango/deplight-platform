@@ -117,7 +117,7 @@ class CreateMcpReleaseRequest(BaseModel):
     tag_prefix: str = "mcp_v"
     profile_name: str = "default"
     service_name: str = "fastapi"
-    ecr_repo_prefix: str = "441676301796.dkr.ecr.ap-northeast-2.amazonaws.com/letsur-serving-fastapi"
+    ecr_repo_prefix: str = "513348493870.dkr.ecr.ap-northeast-2.amazonaws.com/delightful-deploy"
     letsur_ml_project_name: Optional[str] = None
 
 
@@ -143,7 +143,7 @@ class RunDeploymentPipelineRequest(BaseModel):
     prerelease: bool = False
     tag_prefix: str = "mcp_v"
     service_name: str = "fastapi"
-    ecr_repo_prefix: str = "441676301796.dkr.ecr.ap-northeast-2.amazonaws.com/letsur-serving-fastapi"
+    ecr_repo_prefix: str = "513348493870.dkr.ecr.ap-northeast-2.amazonaws.com/delightful-deploy"
     letsur_ml_project_name: Optional[str] = None
 
     # Step 2: create_dummy_run

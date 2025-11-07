@@ -197,52 +197,10 @@ EXPOSE {port}
 CMD ["java", "-jar", "app.jar"]
 """
 
-# Streamlit Dockerfile template (special handling for Streamlit apps)
-STREAMLIT_TEMPLATE = """# Multi-stage build for Streamlit application
-FROM python:3.11-slim as builder
-WORKDIR /app
 
-# Install dependencies
-COPY requirements.txt .
-RUN pip install --no-cache-dir --user -r requirements.txt
-
-# Final stage
-FROM python:3.11-slim
-WORKDIR /app
-
-# Install curl for healthcheck
-RUN apt-get update && apt-get install -y --no-install-recommends curl && rm -rf /var/lib/apt/lists/*
-
-# Copy dependencies from builder
-COPY --from=builder /root/.local /root/.local
-ENV PATH=/root/.local/bin:$PATH
-
-# Copy application code
-COPY . .
-
-# Create non-root user
-RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /app
-USER appuser
-
-# Health check for Streamlit (uses /_stcore/health endpoint)
-HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \\
-  CMD curl -f http://localhost:{port}/_stcore/health || exit 1
-
-EXPOSE {port}
-
-# Start Streamlit with config via CLI options
-CMD {start_command}
-"""
-
-
-def get_dockerfile_template(language: str, framework: str = "") -> str:
-    """언어/프레임워크에 맞는 Dockerfile 템플릿 반환"""
+def get_dockerfile_template(language: str) -> str:
+    """언어에 맞는 Dockerfile 템플릿 반환"""
     language_lower = language.lower()
-    framework_lower = framework.lower() if framework else ""
-
-    # Streamlit 특수 처리
-    if "streamlit" in framework_lower:
-        return STREAMLIT_TEMPLATE
 
     if "python" in language_lower:
         return PYTHON_TEMPLATE

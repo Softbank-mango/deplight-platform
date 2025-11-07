@@ -3,13 +3,27 @@ import os
 import hashlib
 from datetime import datetime, timezone
 from typing import Dict, List, Any, Optional
-import boto3
-import requests
 
-# Initialize AWS clients
-ssm = boto3.client("ssm")
-dynamodb = boto3.resource("dynamodb")
-s3 = boto3.client("s3")
+# Lazy imports for faster cold starts (lamp_admin_mcp pattern)
+# Only import when needed to reduce initialization time
+
+def _get_aws_clients():
+    """Lazy initialization of AWS clients"""
+    import boto3
+    return {
+        'ssm': boto3.client("ssm"),
+        'dynamodb': boto3.resource("dynamodb"),
+        's3': boto3.client("s3")
+    }
+
+# Global cache for clients (initialized on first use)
+_aws_clients = None
+
+def get_clients():
+    global _aws_clients
+    if _aws_clients is None:
+        _aws_clients = _get_aws_clients()
+    return _aws_clients
 
 
 def _fetch_github_repo_info(repository: str, commit_sha: str) -> tuple[List[str], str]:
@@ -56,10 +70,61 @@ def _fetch_github_repo_info(repository: str, commit_sha: str) -> tuple[List[str]
         raise
 
 
+def _check_analysis_cache(repository: str, commit_sha: str) -> Optional[Dict]:
+    """
+    Smart caching (lamp_admin_mcp pattern):
+    Check DynamoDB for recent analysis of same repository
+    If commit SHA prefix matches, reuse analysis (small changes)
+    """
+    try:
+        clients = get_clients()
+        ai_analysis_table = clients['dynamodb'].Table("delightful-deploy-ai-analysis")
+
+        # Query by repository (using GSI)
+        response = ai_analysis_table.query(
+            IndexName='RepositoryIndex',
+            KeyConditionExpression='repository = :repo',
+            ExpressionAttributeValues={':repo': repository},
+            ScanIndexForward=False,  # Most recent first
+            Limit=1
+        )
+
+        if response['Items']:
+            cached = response['Items'][0]
+            cached_sha = cached.get('commit_sha', '')
+
+            # If commit SHA prefix matches (first 6 chars), consider it a small change
+            # Reuse analysis for fast deployment
+            if commit_sha[:6] == cached_sha[:6]:
+                print(f"✅ Cache HIT! Reusing analysis from {cached_sha}")
+                project_info_raw = cached.get('project_info', '{}')
+
+                # Parse project_info if it's a string
+                if isinstance(project_info_raw, str):
+                    import json
+                    project_info = json.loads(project_info_raw)
+                else:
+                    project_info = project_info_raw
+
+                return {
+                    'analysis_id': cached.get('analysis_id'),
+                    'project_info': project_info,
+                    'from_cache': True
+                }
+
+        print(f"⚠️ Cache MISS. Running full AI analysis...")
+        return None
+
+    except Exception as e:
+        print(f"Cache check failed: {e}. Running full analysis...")
+        return None
+
+
 def _get_secret_from_ssm(param_name: str) -> Optional[str]:
     """Retrieve secret from SSM Parameter Store"""
     try:
-        resp = ssm.get_parameter(Name=param_name, WithDecryption=True)
+        clients = get_clients()
+        resp = clients['ssm'].get_parameter(Name=param_name, WithDecryption=True)
         return resp["Parameter"]["Value"]
     except Exception as e:
         print(f"Error retrieving SSM parameter {param_name}: {e}")
@@ -320,67 +385,6 @@ def _fallback_project_detection(files: List[str]) -> Dict[str, Any]:
     return project_info
 
 
-def _remove_heredoc_from_dockerfile(dockerfile: str) -> str:
-    """
-    Post-process Dockerfile to remove heredoc syntax (COPY << EOF).
-    Converts heredoc patterns to RUN echo commands.
-    """
-    import re
-
-    # Pattern to match COPY << heredoc blocks
-    # Matches: COPY [--chown=...] << or <<' or <<- with delimiter
-    heredoc_pattern = r'COPY\s+(?:--\w+=[^\s]+\s+)?<<-?[\'"]?(\w+)[\'"]?\s+([^\n]+)\n(.*?)^\1'
-
-    def replace_heredoc(match):
-        delimiter = match.group(1)
-        target_path = match.group(2).strip()
-        content = match.group(3)
-
-        # Split content into lines
-        lines = content.split('\n')
-
-        # Build RUN echo commands
-        echo_commands = []
-        for i, line in enumerate(lines):
-            # Escape special characters for shell
-            escaped_line = line.replace('\\', '\\\\').replace('"', '\\"').replace('$', '\\$').replace('`', '\\`')
-
-            if i == 0:
-                # First line: overwrite file
-                echo_commands.append(f'RUN echo "{escaped_line}" > {target_path}')
-            else:
-                # Subsequent lines: append to file
-                echo_commands.append(f'    echo "{escaped_line}" >> {target_path}')
-
-        # Add final continuation for multi-line commands
-        if len(echo_commands) > 1:
-            result = echo_commands[0] + ' && \\\n' + ' && \\\n'.join(echo_commands[1:])
-        else:
-            result = echo_commands[0] if echo_commands else ''
-
-        return result
-
-    # Apply regex replacement with MULTILINE and DOTALL flags
-    cleaned = re.sub(heredoc_pattern, replace_heredoc, dockerfile, flags=re.MULTILINE | re.DOTALL)
-
-    # Also check for RUN << heredoc (inline scripts)
-    run_heredoc_pattern = r'RUN\s+<<-?[\'"]?(\w+)[\'"]?\n(.*?)^\1'
-
-    def replace_run_heredoc(match):
-        delimiter = match.group(1)
-        script_content = match.group(2)
-
-        # Convert to RUN with && chained commands
-        lines = [l.strip() for l in script_content.split('\n') if l.strip()]
-        if lines:
-            return 'RUN ' + ' && \\\n    '.join(lines)
-        return ''
-
-    cleaned = re.sub(run_heredoc_pattern, replace_run_heredoc, cleaned, flags=re.MULTILINE | re.DOTALL)
-
-    return cleaned
-
-
 def _generate_deployment_specs(
     base_url: str,
     api_key: str,
@@ -446,30 +450,6 @@ Generate COMPLETE specifications. Each file should be production-ready and fully
 - Use Blue-Green deployment strategy with CodeDeploy
 - Generate appropriate build commands for the detected language/framework
 
-**CRITICAL - Dockerfile Requirements (MUST FOLLOW)**:
-⛔ ABSOLUTELY FORBIDDEN SYNTAX:
-- NEVER use: COPY << or COPY <<'...' (BuildKit heredoc) - THIS WILL FAIL!
-- NEVER use: cat << EOF or cat <<'EOF' (shell heredoc)
-- NEVER use: RUN <<'...' (inline scripts)
-- These syntaxes are NOT supported and will cause build failures!
-
-✅ REQUIRED APPROACH for config files:
-- MUST use RUN echo commands with proper escaping
-- MUST use multiple lines with >> append for multi-line configs
-- Example for nginx.conf:
-  RUN echo "worker_processes 1;" > /etc/nginx/nginx.conf && \\
-      echo "events { worker_connections 1024; }" >> /etc/nginx/nginx.conf && \\
-      echo "http {" >> /etc/nginx/nginx.conf && \\
-      echo "  server {" >> /etc/nginx/nginx.conf && \\
-      echo "    listen 8506;" >> /etc/nginx/nginx.conf && \\
-      echo "  }" >> /etc/nginx/nginx.conf && \\
-      echo "}" >> /etc/nginx/nginx.conf
-- Example for shell scripts:
-  RUN echo "#!/bin/bash" > /entrypoint.sh && \\
-      echo "set -e" >> /entrypoint.sh && \\
-      echo "exec \\"$@\\"" >> /entrypoint.sh && \\
-      chmod +x /entrypoint.sh
-
 Return your response in this format:
 
 ---DOCKERFILE---
@@ -489,7 +469,6 @@ Return your response in this format:
 """
 
     try:
-        # Use GPT-5 to generate all deployment specs (with heredoc prohibition)
         content = _call_openai_api(
             base_url=base_url,
             api_key=api_key,
@@ -523,18 +502,6 @@ Return your response in this format:
         # Store full response as recommendations if not extracted
         if not specs["recommendations"]:
             specs["recommendations"] = content
-
-        # POST-PROCESSING: Remove heredoc syntax from Dockerfile
-        if specs["dockerfile"]:
-            original_dockerfile = specs["dockerfile"]
-            cleaned_dockerfile = _remove_heredoc_from_dockerfile(original_dockerfile)
-
-            # Check if any heredoc was found and removed
-            if cleaned_dockerfile != original_dockerfile:
-                print("⚠️ WARNING: Heredoc syntax detected and removed from Dockerfile")
-                specs["dockerfile"] = cleaned_dockerfile
-            else:
-                print("✓ Dockerfile clean - no heredoc syntax detected")
 
         print(f"Generated specs: {list(specs.keys())}")
         return specs
@@ -874,20 +841,21 @@ def lambda_handler(event, context):
     print("🌸 AI Code Analyzer invoked")
     print(f"Event: {json.dumps(event, default=str)}")
 
-    # Use direct OpenAI API instead of letsur endpoint
-    # Hardcoded OpenAI API key (temporary fix for timeout issues)
-    api_key = "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"
+    # Get API key from SSM
+    api_key = _get_secret_from_ssm(
+        os.getenv("LETSUR_API_KEY_PARAM", "/delightful/letsur/api_key")
+    )
 
     if not api_key:
-        print("❌ ERROR: OpenAI API key not configured")
+        print("❌ ERROR: Letsur API key not found in SSM")
         return {
             "statusCode": 500,
             "body": json.dumps({"error": "API key not configured"})
         }
 
-    # Use direct OpenAI API endpoint
-    base_url = "https://api.openai.com/v1"
-    model = "gpt-5"  # Using gpt-5 model
+    # Get API configuration
+    base_url = os.getenv("LETSUR_BASE_URL", "https://gateway.letsur.ai/v1")
+    model = os.getenv("LETSUR_MODEL", "gpt-5")
 
     print(f"✅ OpenAI API configured (base_url={base_url}, model={model})")
 
@@ -895,15 +863,14 @@ def lambda_handler(event, context):
     ai_analysis_table = os.getenv("AI_ANALYSIS_TABLE", "delightful-deploy-ai-analysis")
     s3_bucket = os.getenv("S3_BUCKET", "delightful-deploy-artifacts")
 
-    # Generate analysis ID (must match GitHub Actions workflow logic)
+    # Generate analysis ID
     repository = event.get("repository", "unknown/repo")
     commit_sha = event.get("commit_sha", "unknown")
     branch = event.get("branch", "main")
 
-    # Use same logic as workflow: MD5 of repo-sha, first 24 chars
-    analysis_id = hashlib.md5(
-        f"{repository}-{commit_sha}".encode()
-    ).hexdigest()[:24]
+    analysis_id = hashlib.sha256(
+        f"{repository}-{commit_sha}-{datetime.now(timezone.utc).isoformat()}".encode()
+    ).hexdigest()[:16]
 
     try:
         print(f"🔍 Analyzing repository: {repository} @ {commit_sha}")

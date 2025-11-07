@@ -55,14 +55,10 @@ def get_start_command(project_info: Dict[str, Any]) -> str:
     """언어/프레임워크에 따라 시작 명령어 결정"""
     primary_lang = project_info.get("primary_language", "").lower()
     frameworks = [f.lower() for f in project_info.get("frameworks", [])]
-    port = project_info.get("app_port", 8000)
 
     # Python
     if "python" in primary_lang:
-        # Streamlit 특수 처리
-        if any("streamlit" in f for f in frameworks):
-            return f"[\"streamlit\", \"run\", \"app.py\", \"--server.port={port}\", \"--server.address=0.0.0.0\", \"--server.headless=true\"]"
-        elif any("fastapi" in f for f in frameworks):
+        if any("fastapi" in f for f in frameworks):
             return "[\"uvicorn\", \"app.main:app\", \"--host\", \"0.0.0.0\", \"--port\", \"8000\"]"
         elif any("django" in f for f in frameworks):
             return "[\"gunicorn\", \"myproject.wsgi:application\", \"--bind\", \"0.0.0.0:8000\"]"
@@ -99,12 +95,11 @@ def generate_dockerfile(project_info: Dict[str, Any]) -> str:
     템플릿 기반이므로 수정이 쉽습니다.
     """
     primary_language = project_info.get("primary_language", "Python")
-    primary_framework = project_info.get("primary_framework", "")
     port = project_info.get("app_port", 8000)
     start_command = get_start_command(project_info)
 
-    # 템플릿 가져오기 (framework 정보 전달)
-    template = get_dockerfile_template(primary_language, primary_framework)
+    # 템플릿 가져오기
+    template = get_dockerfile_template(primary_language)
 
     # 템플릿에 값 채우기
     dockerfile = template.format(

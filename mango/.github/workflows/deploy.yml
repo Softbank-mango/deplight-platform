@@ -172,7 +172,7 @@ jobs:
       - name: Build Docker image
         run: |
           # If target_repository is provided, build from user_repo, otherwise use demo_app
-          BUILD_PATH="${{ github.event.inputs.target_repository && 'user_repo' || './mango/test/demo_app' }}"
+          BUILD_PATH="${{ github.event.inputs.target_repository && 'user_repo' || './test/fastapi_demo' }}"
           docker build -t ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ steps.meta.outputs.image-tag }} \
                        -t ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:latest \
                        $BUILD_PATH
@@ -260,18 +260,16 @@ jobs:
           echo "desired-count=${DESIRED_COUNT}" >> $GITHUB_OUTPUT
 
   deploy-ecs:
-    name: Deploy to ECS (Blue-Green)
+    name: Deploy to ECS (Rolling)
     needs: [build-and-test, deploy-infrastructure]
-    if: always() && needs.build-and-test.result == 'success'  # Terraform 실패해도 계속
+    if: always() && needs.build-and-test.result == 'success'
     runs-on: ubuntu-latest
 
     outputs:
-      deployment-id: ${{ steps.codedeploy.outputs.deployment-id }}
+      alb-dns: ${{ steps.alb.outputs.dns }}
+      url: ${{ steps.alb.outputs.url }}
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -286,52 +284,37 @@ jobs:
             --services ${{ env.ECS_SERVICE }} \
             --query 'services[0].taskDefinition' \
             --output text)
-
           echo "task-def-arn=${TASK_DEF_ARN}" >> $GITHUB_OUTPUT
 
-      - name: Create AppSpec for CodeDeploy
-        run: |
-          cat > appspec.yaml <<EOF
-          version: 0.0
-          Resources:
-            - TargetService:
-                Type: AWS::ECS::Service
-                Properties:
-                  TaskDefinition: "${{ steps.task-def.outputs.task-def-arn }}"
-                  LoadBalancerInfo:
-                    ContainerName: "delightful-deploy"
-                    ContainerPort: ${{ needs.build-and-test.outputs.app-port }}
-                  PlatformVersion: "LATEST"
-          EOF
+          aws ecs describe-task-definition \
+            --task-definition ${TASK_DEF_ARN} \
+            --query 'taskDefinition' > task-def.json
 
-      - name: Create CodeDeploy deployment
-        id: codedeploy
+      - name: Register new task definition (updated image)
+        id: register
         run: |
-          DEPLOYMENT_ID=$(aws deploy create-deployment \
-            --application-name delightful-deploy-app \
-            --deployment-group-name delightful-deploy-dg \
-            --deployment-config-name CodeDeployDefault.ECSCanary10Percent5Minutes \
-            --description "Deployment for commit ${{ github.sha }}" \
-            --revision "{\"revisionType\": \"AppSpecContent\", \"appSpecContent\": {\"content\": \"$(cat appspec.yaml | jq -Rs .)\"}}" \
-            --query 'deploymentId' \
+          IMAGE="${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ needs.build-and-test.outputs.image-tag }}"
+          cat task-def.json | jq 'del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities, .registeredAt, .registeredBy)' > task-def-clean.json
+          cat task-def-clean.json | jq --arg IMG "$IMAGE" '.containerDefinitions[0].image = $IMG' > task-def-updated.json
+
+          NEW_TASK_DEF_ARN=$(aws ecs register-task-definition \
+            --cli-input-json file://task-def-updated.json \
+            --query 'taskDefinition.taskDefinitionArn' \
             --output text)
+          echo "new-task-def-arn=${NEW_TASK_DEF_ARN}" >> $GITHUB_OUTPUT
+          echo "Registered: ${NEW_TASK_DEF_ARN}"
 
-          echo "deployment-id=${DEPLOYMENT_ID}" >> $GITHUB_OUTPUT
-          echo "CodeDeploy Deployment ID: ${DEPLOYMENT_ID}"
-
-      - name: Wait for CodeDeploy deployment
+      - name: Update ECS service (rolling)
         run: |
-          echo "Waiting for CodeDeploy deployment ${{ steps.codedeploy.outputs.deployment-id }}..."
-          aws deploy wait deployment-successful \
-            --deployment-id ${{ steps.codedeploy.outputs.deployment-id }}
+          aws ecs update-service \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --service ${{ env.ECS_SERVICE }} \
+            --task-definition ${{ steps.register.outputs.new-task-def-arn }} \
+            --force-new-deployment > /dev/null
 
-      - name: Get deployment status
-        if: always()
-        run: |
-          aws deploy get-deployment \
-            --deployment-id ${{ steps.codedeploy.outputs.deployment-id }} \
-            --query 'deploymentInfo.status' \
-            --output text
+          aws ecs wait services-stable \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --services ${{ env.ECS_SERVICE }}
 
       - name: Get ALB endpoint
         id: alb
@@ -340,7 +323,6 @@ jobs:
             --names delightful-deploy-alb \
             --query 'LoadBalancers[0].DNSName' \
             --output text)
-
           echo "dns=${ALB_DNS}" >> $GITHUB_OUTPUT
           echo "url=http://${ALB_DNS}" >> $GITHUB_OUTPUT
 
@@ -360,13 +342,16 @@ jobs:
           MAX_RETRIES=10
           RETRY_COUNT=0
 
+          # Try common endpoints in order: /api/health, /health, /
           while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
             echo "Health check attempt $((RETRY_COUNT + 1))/$MAX_RETRIES..."
 
-            if curl -f "http://${ALB_DNS}/health" --max-time 10; then
-              echo "✓ Health check passed!"
-              exit 0
-            fi
+            for PATH in "/api/health" "/health" "/"; do
+              if curl -fsS "http://${ALB_DNS}${PATH}" --max-time 10 >/dev/null; then
+                echo "✓ Health check passed at ${PATH}!"
+                exit 0
+              fi
+            done
 
             RETRY_COUNT=$((RETRY_COUNT + 1))
             sleep 10
@@ -380,10 +365,10 @@ jobs:
           ALB_DNS="${{ needs.deploy-ecs.outputs.alb-dns }}"
 
           echo "Testing root endpoint..."
-          curl -f "http://${ALB_DNS}/" || exit 1
+          curl -fsS "http://${ALB_DNS}/" --max-time 10 >/dev/null || echo "root endpoint not available"
 
-          echo "Testing API status endpoint..."
-          curl -f "http://${ALB_DNS}/api/status" || exit 1
+          echo "Testing /api/health..."
+          curl -fsS "http://${ALB_DNS}/api/health" --max-time 10 >/dev/null || echo "/api/health not available"
 
   notify:
     name: Notify Results

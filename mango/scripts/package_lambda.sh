@@ -11,6 +11,13 @@ trap 'rm -rf "$tmpdir"' EXIT
 
 rsync -a "$SRC_DIR/" "$tmpdir/"
 
+# Move package/* to root for Lambda to find dependencies
+if [ -d "$tmpdir/package" ]; then
+    echo "Moving package contents to root..."
+    rsync -a "$tmpdir/package/" "$tmpdir/"
+    rm -rf "$tmpdir/package"
+fi
+
 pushd "$tmpdir" >/dev/null
 zip -r "$OLDPWD/$OUT_ZIP" .
 popd >/dev/null

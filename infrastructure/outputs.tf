@@ -27,3 +27,13 @@ output "codedeploy_deployment_group" {
   description = "Name of the CodeDeploy deployment group."
   value       = module.codedeploy.codedeploy_deployment_group_name
 }
+
+output "container_image" {
+  description = "Container image URI deployed to ECS (includes image tag)."
+  value       = var.container_image
+}
+
+output "ecs_cluster_name" {
+  description = "Name of the ECS cluster."
+  value       = module.ecs_service.cluster_name
+}

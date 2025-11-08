@@ -86,3 +86,42 @@
 | **Infrastructure Layer** | Terraform Pipeline (CLI + Remote State) | Manages infra and CodeDeploy configuration |
 | **AWS Execution Layer** | ECS + ALB + CodeDeploy + CloudWatch | Runs the service, enables Blue/Green + rollback, and monitoring |
 | **Analysis Layer** | AI Code Analyzer (Lambda) | Code-driven AI analysis and deployment setting suggestions |
+
+## Network & Deployment Flow (Mermaid)
+
+```mermaid
+graph TD
+  subgraph VPC[Shared VPC]
+    ALB[ALB Blue/Green Listeners]
+    ECS[ECS Cluster + X-Ray Sidecar]
+  end
+
+  TG_BLUE[Target Group Blue]
+  TG_GREEN[Target Group Green]
+
+  GH_ANALYZER["GitHub Actions - Analyzer"] --> AI["AI Code Analyzer Lambda"]
+  AI --> S3AI[(S3 Analyzer Outputs)]
+  AI --> PR["PR Comments / tfvars"]
+  PR --> GH
+  S3AI --> TF
+
+  GH["GitHub Actions (OIDC)"] -->|Build_and_Push| ECR[(Amazon ECR)]
+  GH -->|Terraform Plan_and_Apply| TF["Terraform Runner"]
+
+  TF -->|Modules| VPC
+  TF -->|Modules| CD[CodeDeploy]
+  TF -->|State| S3[(S3 State Bucket)]
+  TF -->|Lock| DDB[(DynamoDB Lock)]
+
+  CD -->|Blue/Green Deploy| ECS
+  CD -->|Traffic| TG_BLUE
+  CD -->|Traffic| TG_GREEN
+  ALB --> TG_BLUE
+  ALB --> TG_GREEN
+  TG_BLUE -->|Prod Route| ALB
+  TG_GREEN -->|Test Route| ALB
+
+  ECS --> CW[CloudWatch Dashboards]
+  ECS --> XR[X-Ray Sampling]
+  ALB --> CW
+```

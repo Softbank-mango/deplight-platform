@@ -64,6 +64,10 @@ module "ecs_service" {
   environment            = local.ecs_env
   log_retention_in_days  = var.log_retention_in_days
   enable_execute_command = var.enable_execute_command
+  enable_xray            = var.enable_xray
+  xray_daemon_image      = var.xray_daemon_image
+  xray_daemon_cpu        = var.xray_daemon_cpu
+  xray_daemon_memory     = var.xray_daemon_memory
   tags                   = var.global_tags
   use_codedeploy         = true
 }

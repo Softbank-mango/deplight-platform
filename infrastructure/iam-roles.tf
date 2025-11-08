@@ -52,3 +52,23 @@ resource "aws_iam_role_policy" "ecs_task_inline" {
   role   = aws_iam_role.ecs_task.id
   policy = var.task_role_policy_json
 }
+
+resource "aws_iam_role_policy" "ecs_task_xray" {
+  count = var.enable_xray ? 1 : 0
+
+  name = "${var.project_name}-ecs-task-xray"
+  role = aws_iam_role.ecs_task.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "xray:PutTraceSegments",
+          "xray:PutTelemetryRecords"
+        ]
+        Resource = "*"
+      }
+    ]
+  })
+}

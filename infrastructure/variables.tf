@@ -96,6 +96,30 @@ variable "enable_execute_command" {
   default     = false
 }
 
+variable "enable_xray" {
+  type        = bool
+  description = "Enable AWS X-Ray daemon sidecar in the ECS task."
+  default     = true
+}
+
+variable "xray_daemon_image" {
+  type        = string
+  description = "Container image used for the X-Ray daemon."
+  default     = "amazon/aws-xray-daemon:3.3.11"
+}
+
+variable "xray_daemon_cpu" {
+  type        = number
+  description = "CPU units reserved for the X-Ray daemon."
+  default     = 64
+}
+
+variable "xray_daemon_memory" {
+  type        = number
+  description = "Memory (MB) reserved for the X-Ray daemon."
+  default     = 128
+}
+
 variable "health_check_path" {
   type        = string
   description = "ALB target group health check path."

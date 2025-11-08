@@ -13,6 +13,61 @@ locals {
       value = env.value
     }
   ]
+
+  xray_environment = var.enable_xray ? [
+    {
+      name  = "AWS_XRAY_DAEMON_ADDRESS"
+      value = "127.0.0.1:2000"
+    }
+  ] : []
+
+  main_container = {
+    name      = var.name
+    image     = var.container_image
+    essential = true
+    portMappings = [
+      {
+        containerPort = var.container_port
+        hostPort      = var.container_port
+        protocol      = "tcp"
+      }
+    ]
+    environment = concat(local.container_environment, local.xray_environment)
+    logConfiguration = {
+      logDriver = "awslogs"
+      options = {
+        awslogs-group         = aws_cloudwatch_log_group.this.name
+        awslogs-region        = var.aws_region
+        awslogs-stream-prefix = "ecs"
+      }
+    }
+  }
+
+  xray_container = var.enable_xray ? [
+    {
+      name      = "xray-daemon"
+      image     = var.xray_daemon_image
+      essential = false
+      cpu       = var.xray_daemon_cpu
+      memory    = var.xray_daemon_memory
+      portMappings = [
+        {
+          containerPort = 2000
+          protocol      = "udp"
+        }
+      ]
+      logConfiguration = {
+        logDriver = "awslogs"
+        options = {
+          awslogs-group         = aws_cloudwatch_log_group.this.name
+          awslogs-region        = var.aws_region
+          awslogs-stream-prefix = "xray"
+        }
+      }
+    }
+  ] : []
+
+  task_containers = concat([local.main_container], local.xray_container)
 }
 
 resource "aws_cloudwatch_log_group" "this" {
@@ -44,29 +99,7 @@ resource "aws_ecs_task_definition" "this" {
   execution_role_arn       = var.execution_role_arn
   task_role_arn            = var.task_role_arn
 
-  container_definitions = jsonencode([
-    {
-      name      = var.name
-      image     = var.container_image
-      essential = true
-      portMappings = [
-        {
-          containerPort = var.container_port
-          hostPort      = var.container_port
-          protocol      = "tcp"
-        }
-      ]
-      environment = local.container_environment
-      logConfiguration = {
-        logDriver = "awslogs"
-        options = {
-          awslogs-group         = aws_cloudwatch_log_group.this.name
-          awslogs-region        = var.aws_region
-          awslogs-stream-prefix = "ecs"
-        }
-      }
-    }
-  ])
+  container_definitions = jsonencode(local.task_containers)
 
   tags = local.common_tags
 }
@@ -83,7 +116,8 @@ resource "aws_ecs_service" "this" {
 
   lifecycle {
     ignore_changes = [
-      desired_count
+      desired_count,
+      task_definition
     ]
   }
 

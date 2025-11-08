@@ -51,7 +51,7 @@ Inputs are scoped so the initial T-09 delivery can focus on ECS; additional serv
 Downstream workflows can reference `alarm_arns` to post links in Slack (T-11) or attach SNS subscriptions elsewhere.
 
 ## Usage Pattern
-Environment stacks (e.g., `infrastructure/environments/dev/main.tf`) will instantiate the module after ECS/ALB resources exist:
+Environment stacks (e.g., `infrastructure/environments/dev/main.tf`) will instantiate the module after ECS/ALB resources exist. Only include log group names that are not already managed elsewhere (the ECS module currently creates `/ecs/<service>` and sets retention itself):
 
 ```hcl
 module "observability" {

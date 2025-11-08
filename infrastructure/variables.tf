@@ -170,3 +170,9 @@ variable "github_allowed_subjects" {
   description = "Additional GitHub OIDC subject patterns allowed to assume the role."
   default     = []
 }
+
+variable "environment_name" {
+  type        = string
+  description = "Environment identifier used for cross-cutting resources (e.g., observability)."
+  default     = "dev"
+}

@@ -93,3 +93,26 @@ module "github_oidc" {
   role_name        = var.github_oidc_role_name
   allowed_subjects = var.github_allowed_subjects
 }
+
+module "observability" {
+  source = "./modules/observability-suite"
+
+  environment                 = var.environment_name
+  service_name                = module.ecs_service.service_name
+  cluster_name                = module.ecs_service.cluster_name
+  region                      = var.aws_region
+  alb_target_group_arn_suffix = module.alb.blue_target_group_arn_suffix
+
+  log_group_names          = []
+  log_retention_in_days    = 30
+  xray_sampling_enabled    = true
+  xray_fixed_rate          = 0.1
+  xray_reservoir_size      = 1
+  alarm_topic_arn          = null
+  cpu_high_threshold       = 80
+  memory_high_threshold    = 80
+  alb_5xx_threshold        = 5
+  alb_latency_threshold_ms = 1500
+
+  tags = var.global_tags
+}

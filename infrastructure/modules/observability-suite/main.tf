@@ -2,7 +2,7 @@ locals {
   name_prefix    = "${var.environment}-${var.service_name}"
   dashboard_name = "${local.name_prefix}-ecs-observability"
   alarm_actions  = var.alarm_topic_arn == null ? [] : [var.alarm_topic_arn]
-  alb_enabled    = var.alb_target_group_arn_suffix != null && var.alb_target_group_arn_suffix != ""
+  alb_enabled    = var.enable_alb_metrics && var.alb_target_group_arn_suffix != null && var.alb_target_group_arn_suffix != ""
   xray_rule_name = lower("${substr(var.environment, 0, 3)}-${substr(var.service_name, 0, 8)}-ecs")
 
   common_tags = merge(
@@ -103,7 +103,7 @@ resource "aws_cloudwatch_metric_alarm" "memory_high" {
 }
 
 resource "aws_cloudwatch_metric_alarm" "alb_5xx" {
-  count = local.alb_enabled ? 1 : 0
+  count = var.enable_alb_metrics ? 1 : 0
 
   alarm_name          = "${local.name_prefix}-alb-5xx"
   comparison_operator = "GreaterThanOrEqualToThreshold"
@@ -127,7 +127,7 @@ resource "aws_cloudwatch_metric_alarm" "alb_5xx" {
 }
 
 resource "aws_cloudwatch_metric_alarm" "alb_latency" {
-  count = local.alb_enabled ? 1 : 0
+  count = var.enable_alb_metrics ? 1 : 0
 
   alarm_name          = "${local.name_prefix}-alb-latency"
   comparison_operator = "GreaterThanOrEqualToThreshold"

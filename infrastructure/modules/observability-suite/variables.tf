@@ -24,6 +24,12 @@ variable "alb_target_group_arn_suffix" {
   default     = null
 }
 
+variable "enable_alb_metrics" {
+  type        = bool
+  description = "Force-enable ALB widgets/alarms when target group info is known."
+  default     = false
+}
+
 variable "log_group_names" {
   type        = list(string)
   description = "Log group names that should share the configured retention policy."

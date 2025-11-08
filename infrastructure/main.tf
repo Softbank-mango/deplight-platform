@@ -106,6 +106,7 @@ module "observability" {
   cluster_name                = module.ecs_service.cluster_name
   region                      = var.aws_region
   alb_target_group_arn_suffix = module.alb.blue_target_group_arn_suffix
+  enable_alb_metrics          = true
 
   log_group_names          = []
   log_retention_in_days    = 30

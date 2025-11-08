@@ -57,6 +57,50 @@ data "aws_iam_policy_document" "base_permissions" {
     actions   = ["sts:GetCallerIdentity"]
     resources = ["*"]
   }
+
+  statement {
+    sid = "ECRPush"
+    actions = [
+      "ecr:GetAuthorizationToken",
+      "ecr:BatchCheckLayerAvailability",
+      "ecr:CompleteLayerUpload",
+      "ecr:InitiateLayerUpload",
+      "ecr:PutImage",
+      "ecr:UploadLayerPart",
+      "ecr:DescribeRepositories"
+    ]
+    resources = ["*"]
+  }
+
+  statement {
+    sid = "TerraformRead"
+    actions = [
+      "ecs:DescribeClusters",
+      "ecs:DescribeServices",
+      "ecs:DescribeTaskDefinition",
+      "ecs:ListClusters",
+      "ecs:ListServices",
+      "codedeploy:GetDeployment",
+      "codedeploy:ListDeployments",
+      "cloudwatch:ListDashboards",
+      "cloudwatch:DescribeAlarms",
+      "logs:DescribeLogGroups"
+    ]
+    resources = ["*"]
+  }
+
+  statement {
+    sid = "TerraformWrite"
+    actions = [
+      "ecs:RegisterTaskDefinition",
+      "codedeploy:CreateDeployment",
+      "codedeploy:RegisterApplicationRevision",
+      "cloudwatch:PutDashboard",
+      "cloudwatch:PutMetricAlarm",
+      "logs:PutRetentionPolicy"
+    ]
+    resources = ["*"]
+  }
 }
 
 resource "aws_iam_policy" "base" {
